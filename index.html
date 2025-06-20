@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdSpace MVP</title>
+  <title>AdSpace Billboard</title>
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
@@ -143,120 +143,137 @@
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const mintAddress = 'FytTnYUGkxKGtRfSvBJiK86uaKvt6jyPWAx9ewqQpump';
-      const heliusApiKey = 'da9fb9ad-b65f-4708-bf32-d9b789fcf387';
-      let wallet = null;
-      let userAds = {};
+    const mintAddress = 'FytTnYUGkxKGtRfSvBJiK86uaKvt6jyPWAx9ewqQpump';
+    const heliusApiKey = 'da9fb9ad-b65f-4708-bf32-d9b789fcf387';
+    let wallet = null;
+    let userAds = {};
 
-      const connectBtn = document.getElementById('connectBtn');
-      const disconnectBtn = document.getElementById('disconnectBtn');
+    document.getElementById('connectBtn').addEventListener('click', connectWallet);
+    document.getElementById('disconnectBtn').addEventListener('click', disconnectWallet);
+    document.getElementById('uploadBtn').addEventListener('click', uploadAd);
 
-      connectBtn.addEventListener('click', connectWallet);
-      disconnectBtn.addEventListener('click', disconnectWallet);
-      document.getElementById('uploadBtn').addEventListener('click', uploadAd);
-
-      async function connectWallet() {
-        if (window.solana && window.solana.isPhantom) {
-          try {
-            const res = await window.solana.connect();
-            wallet = res.publicKey.toString();
-            document.getElementById('walletAddress').innerText = 'Wallet: ' + wallet;
-            document.getElementById('message').innerText = '';
-            connectBtn.style.display = 'none';
-            disconnectBtn.style.display = 'inline-block';
-          } catch (err) {
-            alert('Wallet connection failed.');
-            console.error(err);
-          }
-        } else {
-          alert('Phantom Wallet not found.');
-        }
-      }
-
-      function disconnectWallet() {
-        wallet = null;
-        document.getElementById('walletAddress').innerText = '';
-        document.getElementById('message').innerText = 'Wallet disconnected.';
-        connectBtn.style.display = 'inline-block';
-        disconnectBtn.style.display = 'none';
-      }
-
-      async function getTokenHolders() {
+    async function connectWallet() {
+      if (window.solana && window.solana.isPhantom) {
         try {
-          const holdersUrl = `https://api.helius.xyz/v0/token-holders?api-key=${heliusApiKey}&mint=${mintAddress}`;
-          const res = await fetch(holdersUrl);
-          const json = await res.json();
-          if (!json || !Array.isArray(json.holders)) {
-            console.warn('API format unexpected:', json);
-            return [];
-          }
-          return json.holders;
+          const res = await window.solana.connect();
+          wallet = res.publicKey.toString();
+          document.getElementById('walletAddress').innerText = 'Wallet: ' + wallet;
+          document.getElementById('message').innerText = '';
         } catch (err) {
-          console.error('Failed to fetch token holders:', err);
-          return [];
+          alert('Wallet connection failed.');
+          console.error(err);
         }
+      } else {
+        alert('Phantom Wallet not found.');
       }
+    }
 
-      async function uploadAd() {
-        const fileInput = document.getElementById('adImage');
-        const file = fileInput.files[0];
-        if (!wallet) return alert('Please connect your wallet first.');
-        if (!file) return alert('No image selected.');
-        if (file.size > 1e6) return alert('File too large (max 1MB).');
+    function disconnectWallet() {
+      wallet = null;
+      document.getElementById('walletAddress').innerText = '';
+      document.getElementById('message').innerText = 'Wallet disconnected.';
+    }
 
-        const holders = await getTokenHolders();
-        const normalizedWallet = wallet.toLowerCase();
-        const holder = holders.find(h => h.owner?.toLowerCase() === normalizedWallet);
-        if (!holder || parseFloat(holder.amount) <= 0) {
-          document.getElementById('message').innerText = 'You must hold tokens to upload an ad.';
-          return;
+    async function getTokenHolders() {
+      try {
+        const holdersUrl = `https://api.helius.xyz/v0/token-holders?api-key=${heliusApiKey}&mint=${mintAddress}`;
+        const res = await fetch(holdersUrl);
+        const json = await res.json();
+        if (!json || !Array.isArray(json.holders)) {
+          console.warn('API format unexpected, using fallback balance check');
+          return await getHolderFromWalletFallback();
         }
-
-        const reader = new FileReader();
-        reader.onload = function (e) {
-          const base64 = e.target.result;
-          userAds[normalizedWallet] = base64;
-          document.getElementById('message').innerText = 'Ad uploaded successfully!';
-          document.getElementById('preview').innerHTML = `<p>Preview:</p><img src="${base64}" alt="Ad preview" />`;
-          renderAds();
-        };
-        reader.onerror = function () {
-          console.error('File read error');
-          document.getElementById('message').innerText = 'Failed to read file.';
-        };
-        reader.readAsDataURL(file);
+        return json.holders;
+      } catch (err) {
+        console.warn('Helius failed, using fallback balance check');
+        return await getHolderFromWalletFallback();
       }
+    }
 
-      async function renderAds() {
-        const holders = await getTokenHolders();
-        const total = holders.reduce((sum, h) => sum + parseFloat(h.amount || 0), 0);
-        const container = document.getElementById('ads');
-        container.innerHTML = '';
-
-        holders.forEach(h => {
-          const percent = (parseFloat(h.amount || 0) / total).toFixed(4);
-          const div = document.createElement('div');
-          div.className = 'ad-box';
-          div.style.flex = percent;
-
-          const ownerKey = h.owner?.toLowerCase();
-          const adImage = userAds[ownerKey];
-          if (adImage) {
-            const img = document.createElement('img');
-            img.src = adImage;
-            img.alt = 'Ad';
-            div.appendChild(img);
-          } else {
-            div.innerText = `${(percent * 100).toFixed(2)}% - No Ad`;
-          }
-          container.appendChild(div);
+    async function getHolderFromWalletFallback() {
+      if (!wallet) return [];
+      try {
+        const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'));
+        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(new solanaWeb3.PublicKey(wallet), {
+          mint: new solanaWeb3.PublicKey(mintAddress),
         });
+        if (!tokenAccounts.value.length) return [];
+        const amount = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
+        return [
+          {
+            owner: wallet,
+            amount: amount * 1e9,
+          },
+        ];
+      } catch (e) {
+        console.error('Fallback wallet check failed:', e);
+        return [];
+      }
+    }
+
+    async function uploadAd() {
+      const fileInput = document.getElementById('adImage');
+      const file = fileInput.files[0];
+      console.log('Selected file:', file);
+      if (!wallet) return alert('Please connect your wallet first.');
+      if (!file) return alert('No image selected.');
+      if (file.size > 1e6) return alert('File too large (max 1MB).');
+
+      const holders = await getTokenHolders();
+      const normalizedWallet = wallet.toLowerCase();
+      const holder = holders.find(h => h.owner?.toLowerCase() === normalizedWallet);
+      const rawAmount = parseFloat(holder?.amount || 0);
+      const normalizedAmount = rawAmount / 1e9;
+      console.log('Raw token amount:', rawAmount, 'Normalized:', normalizedAmount);
+
+      if (!holder || normalizedAmount <= 0) {
+        document.getElementById('message').innerText = 'You must hold tokens to upload an ad.';
+        return;
       }
 
-      renderAds();
-      setInterval(renderAds, 60000);
-    });
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const base64 = e.target.result;
+        userAds[normalizedWallet] = base64;
+        document.getElementById('message').innerText = 'Ad uploaded successfully!';
+        document.getElementById('preview').innerHTML = `<p>Preview:</p><img src="${base64}" alt="Ad preview" />`;
+        renderAds();
+      };
+      reader.onerror = function () {
+        console.error('File read error');
+        document.getElementById('message').innerText = 'Failed to read file.';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function renderAds() {
+      const holders = await getTokenHolders();
+      const total = holders.reduce((sum, h) => sum + parseFloat(h.amount || 0), 0);
+      const container = document.getElementById('ads');
+      container.innerHTML = '';
+
+      holders.forEach(h => {
+        const percent = (parseFloat(h.amount || 0) / total).toFixed(4);
+        const div = document.createElement('div');
+        div.className = 'ad-box';
+        div.style.flex = percent;
+
+        const ownerKey = h.owner?.toLowerCase();
+        const adImage = userAds[ownerKey];
+        if (adImage) {
+          const img = document.createElement('img');
+          img.src = adImage;
+          img.alt = 'Ad';
+          div.appendChild(img);
+        } else {
+          div.innerText = `${(percent * 100).toFixed(2)}% - No Ad`;
+        }
+        container.appendChild(div);
+      });
+    }
+
+    renderAds();
+    setInterval(renderAds, 60000);
   </script>
 </body>
 </html>
