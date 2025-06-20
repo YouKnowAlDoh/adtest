@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AdSpace MVP</title>
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Libre Baskerville', serif;
+      background: #ffffff;
+      color: #000000;
+      padding: 20px;
+      margin: 0;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      flex-wrap: wrap;
+    }
+    .wallet-buttons {
+      display: flex;
+      gap: 10px;
+      margin-left: auto;
+    }
+    h1 {
+      font-size: 2em;
+      font-weight: 700;
+      border-bottom: 2px solid #000;
+      padding-bottom: 10px;
+      margin: 0;
+      flex: 1;
+    }
+    #ads {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      width: 100%;
+      min-height: 200px;
+      border: 1px solid #000;
+      margin-bottom: 30px;
+    }
+    .ad-box {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      background: #f4f4f4;
+      padding: 10px;
+      border-right: 1px solid #ccc;
+      flex-grow: 1;
+      min-width: 100px;
+    }
+    .ad-box:last-child {
+      border-right: none;
+    }
+    .ad-box img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    #uploadForm {
+      background: #f9f9f9;
+      padding: 20px;
+      border: 1px solid #ddd;
+    }
+    #uploadForm h3 {
+      margin-top: 0;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+    }
+    #preview img {
+      max-height: 100px;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+    }
+    #message {
+      color: #cc0000;
+      margin-top: 10px;
+      font-weight: bold;
+      font-family: 'Inter', sans-serif;
+    }
+    button {
+      padding: 10px 20px;
+      background: #000;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #333;
+    }
+    input[type="file"] {
+      margin-top: 10px;
+      padding: 6px;
+      font-family: 'Inter', sans-serif;
+    }
+    #walletAddress {
+      margin: 10px 0;
+      font-weight: 600;
+      word-break: break-all;
+    }
+    @media screen and (max-width: 600px) {
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .wallet-buttons {
+        margin-left: 0;
+        margin-top: 10px;
+        width: 100%;
+        justify-content: flex-end;
+      }
+      .ad-box {
+        min-width: 50%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AdSpace Billboard</h1>
+    <div class="wallet-buttons">
+      <button id="connectBtn">Connect Wallet</button>
+      <button id="disconnectBtn">Disconnect Wallet</button>
+    </div>
+  </header>
+
+  <div id="walletAddress"></div>
+  <div id="message"></div>
+
+  <div id="ads"></div>
+
+  <div id="uploadForm">
+    <h3>Upload Your Ad Image</h3>
+    <input type="file" id="adImage" accept="image/*" />
+    <button id="uploadBtn">Upload</button>
+    <div id="preview"></div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const mintAddress = 'FytTnYUGkxKGtRfSvBJiK86uaKvt6jyPWAx9ewqQpump';
+      const heliusApiKey = 'da9fb9ad-b65f-4708-bf32-d9b789fcf387';
+      let wallet = null;
+      let userAds = {};
+
+      const connectBtn = document.getElementById('connectBtn');
+      const disconnectBtn = document.getElementById('disconnectBtn');
+
+      connectBtn.addEventListener('click', connectWallet);
+      disconnectBtn.addEventListener('click', disconnectWallet);
+      document.getElementById('uploadBtn').addEventListener('click', async () => {
+        await uploadAd();
+      });
+
+      async function connectWallet() {
+        if (window.solana && window.solana.isPhantom) {
+          try {
+            const res = await window.solana.connect();
+            wallet = res.publicKey.toString();
+            document.getElementById('walletAddress').innerText = 'Wallet: ' + wallet;
+            document.getElementById('message').innerText = '';
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = 'inline-block';
+          } catch (err) {
+            alert('Wallet connection failed.');
+            console.error(err);
+          }
+        } else {
+          alert('Phantom Wallet not found.');
+        }
+      }
+
+      function disconnectWallet() {
+        wallet = null;
+        document.getElementById('walletAddress').innerText = '';
+        document.getElementById('message').innerText = 'Wallet disconnected.';
+        connectBtn.style.display = 'inline-block';
+        disconnectBtn.style.display = 'none';
+      }
+
+      async function getTokenHolders() {
+        try {
+          const holdersUrl = `https://api.helius.xyz/v0/token-holders?api-key=${heliusApiKey}&mint=${mintAddress}`;
+          const res = await fetch(holdersUrl);
+          const data = await res.json();
+          return data;
+        } catch (err) {
+          console.error('Failed to fetch token holders:', err);
+          document.getElementById('message').innerText = 'Error fetching token data.';
+          return [];
+        }
+      }
+
+      async function uploadAd() {
+        const fileInput = document.getElementById('adImage');
+        const file = fileInput.files[0];
+
+        if (!wallet) {
+          document.getElementById('message').innerText = 'Please connect your wallet first.';
+          return;
+        }
+
+        if (!file) {
+          document.getElementById('message').innerText = 'Please choose an image file to upload.';
+          return;
+        }
+
+        if (file.size > 1000000) {
+          document.getElementById('message').innerText = 'Image too large. Max allowed is 1MB.';
+          return;
+        }
+
+        const holders = await getTokenHolders();
+        const normalizedWallet = wallet.toLowerCase();
+        const isHolder = holders.some(h => h.owner?.toLowerCase() === normalizedWallet);
+
+        if (!isHolder) {
+          document.getElementById('message').innerText = 'You must hold tokens to upload an ad.';
+          return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+          const base64 = e.target.result;
+          userAds[normalizedWallet] = base64;
+          document.getElementById('message').innerText = 'Ad uploaded successfully!';
+          document.getElementById('preview').innerHTML = `<p>Preview:</p><img src="${base64}" alt="Ad preview" />`;
+          renderAds();
+        };
+
+        reader.onerror = function () {
+          document.getElementById('message').innerText = 'Error reading file. Please try another image.';
+        };
+
+        reader.readAsDataURL(file);
+      }
+
+      async function renderAds() {
+        const holders = await getTokenHolders();
+        const total = holders.reduce((sum, h) => sum + parseFloat(h.amount || 0), 0);
+        const container = document.getElementById('ads');
+        container.innerHTML = '';
+
+        holders.forEach(h => {
+          const percent = (parseFloat(h.amount || 0) / total).toFixed(4);
+          const div = document.createElement('div');
+          div.className = 'ad-box';
+          div.style.flex = percent;
+
+          const ownerKey = h.owner?.toLowerCase();
+          const adImage = userAds[ownerKey];
+          if (adImage) {
+            const img = document.createElement('img');
+            img.src = adImage;
+            img.alt = 'Ad';
+            div.appendChild(img);
+          } else {
+            div.innerText = `${(percent * 100).toFixed(2)}% - No Ad`;
+          }
+          container.appendChild(div);
+        });
+      }
+
+      renderAds();
+      setInterval(renderAds, 60000);
+    });
+  </script>
+</body>
+</html>
