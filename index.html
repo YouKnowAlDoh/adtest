@@ -154,9 +154,7 @@
 
       connectBtn.addEventListener('click', connectWallet);
       disconnectBtn.addEventListener('click', disconnectWallet);
-      document.getElementById('uploadBtn').addEventListener('click', async () => {
-        await uploadAd();
-      });
+      document.getElementById('uploadBtn').addEventListener('click', uploadAd);
 
       async function connectWallet() {
         if (window.solana && window.solana.isPhantom) {
@@ -188,11 +186,14 @@
         try {
           const holdersUrl = `https://api.helius.xyz/v0/token-holders?api-key=${heliusApiKey}&mint=${mintAddress}`;
           const res = await fetch(holdersUrl);
-          const data = await res.json();
-          return data;
+          const json = await res.json();
+          if (!json || !Array.isArray(json.holders)) {
+            console.warn('API format unexpected:', json);
+            return [];
+          }
+          return json.holders;
         } catch (err) {
           console.error('Failed to fetch token holders:', err);
-          document.getElementById('message').innerText = 'Error fetching token data.';
           return [];
         }
       }
@@ -200,33 +201,19 @@
       async function uploadAd() {
         const fileInput = document.getElementById('adImage');
         const file = fileInput.files[0];
-
-        if (!wallet) {
-          document.getElementById('message').innerText = 'Please connect your wallet first.';
-          return;
-        }
-
-        if (!file) {
-          document.getElementById('message').innerText = 'Please choose an image file to upload.';
-          return;
-        }
-
-        if (file.size > 1000000) {
-          document.getElementById('message').innerText = 'Image too large. Max allowed is 1MB.';
-          return;
-        }
+        if (!wallet) return alert('Please connect your wallet first.');
+        if (!file) return alert('No image selected.');
+        if (file.size > 1e6) return alert('File too large (max 1MB).');
 
         const holders = await getTokenHolders();
         const normalizedWallet = wallet.toLowerCase();
-        const isHolder = holders.some(h => h.owner?.toLowerCase() === normalizedWallet);
-
-        if (!isHolder) {
+        const holder = holders.find(h => h.owner?.toLowerCase() === normalizedWallet);
+        if (!holder || parseFloat(holder.amount) <= 0) {
           document.getElementById('message').innerText = 'You must hold tokens to upload an ad.';
           return;
         }
 
         const reader = new FileReader();
-
         reader.onload = function (e) {
           const base64 = e.target.result;
           userAds[normalizedWallet] = base64;
@@ -234,11 +221,10 @@
           document.getElementById('preview').innerHTML = `<p>Preview:</p><img src="${base64}" alt="Ad preview" />`;
           renderAds();
         };
-
         reader.onerror = function () {
-          document.getElementById('message').innerText = 'Error reading file. Please try another image.';
+          console.error('File read error');
+          document.getElementById('message').innerText = 'Failed to read file.';
         };
-
         reader.readAsDataURL(file);
       }
 
